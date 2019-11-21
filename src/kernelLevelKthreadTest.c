@@ -4,6 +4,22 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/time.h>
+#include <linux/ktime.h>
+#include <linux/timekeeping.h>
+#include <linux/random.h>
+#include <linux/list.h>
+
+
+struct timespec starttime;
+struct timespec endtime;
+unsigned long long start;
+unsigned long long end;
+struct my_node{
+    struct list_head list;
+    int data;
+};
+struct list_head my_list;
 
 typedef struct Node
 {
@@ -379,13 +395,11 @@ void threadTest1(void){
 	{
 	    insertCount++;
 	    x=first->rlink;
-	    // 주석처리한 while문의 경우에는 인서트 하는 위치를 랜덤하게 테스트 하려고 만든 코드로보임
-	    // 문제는 커널에서 rand함수를 제공하지않기 때문에 이부분은 테스트할때 
-	    // 시간과 관련된 정수형 시드를 추출해서 아래와 유사하게 %2넣고 테스트 하시면 될것 같아요! 
-	    /*
 	    while(1)
 	    {
-		if(rand()%2==0)
+		int a;
+		get_random_bytes(&a, sizeof(a));
+		if(a%2==0)
 		    break;
 		else
 		{
@@ -398,32 +412,11 @@ void threadTest1(void){
 		}
 
 	    }
-	    */
 
 	}while(!Insert(p,x));
-	/*
-	   do
-	   {
-	   x=l.first->rlink->rlink;
-	   while(1)
-	   {
-	   if(rand()%2==0)
-	   break;
-	   else
-	   {
-	   if(x->rlink!=l.end)
-	   x=l.first->rlink->rlink;
-	   else if(x->rlink!=0)
-	   x=x->rlink;
-	   else
-	   x=l.first->rlink->rlink;
-	   }
-
-	   }
-	   }
-	   while(!Delete(x));*/
-	//printk("Delete %d\n",x->data);
     }
+    getnstimeofday(&endtime);
+    end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
     printk("TestFinished\n");
 }
 
@@ -439,11 +432,11 @@ void threadTest2(void){
 	do
 	{
 	    x=l.first->rlink->rlink;
-	    //주석한 while 문의 설명은 Test1에 서술.
-	    /*
 	    while(1)
 	    {
-		if(rand()%2==0)
+		int a;
+		get_random_bytes(&a, sizeof(a));
+		if(a%2==0)
 		    break;
 		else
 		{
@@ -456,12 +449,79 @@ void threadTest2(void){
 		}
 
 	    }
-	    */	    
 	}
 	while(!Delete(x));
     }
-
+	getnstimeofday(&endtime);
+    	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
 }
+
+void threadTest3(void)
+{
+    
+    int i;
+    int insertCount=0;
+    int iterations=50;
+    for(i=0;i<iterations;i++)
+    {
+	struct my_node* new = kmalloc(sizeof(struct my_node), GFP_KERNEL);
+        new->data = i;
+	int b = 1;
+	struct my_node *current_node;
+	while(b)
+	{
+		struct list_head *p;
+		list_for_each(p, &my_list)
+		{
+		    int a;
+		    get_random_bytes(&a, sizeof(a));
+		    if(a%2==0){
+		        current_node = list_entry(p, struct my_node, list);
+		        b = 0;
+			break;
+		    }
+		}
+
+	}
+	list_add(&new->list, &my_list);
+    }
+	getnstimeofday(&endtime);
+    	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
+}
+
+void threadTest4(void)
+{
+    Node *first=l.first;
+    Node *x=first->rlink;
+    int i;
+    int insertCount=0;
+    int iterations=50;
+    for(i=0;i<iterations;i++)
+    {
+	int b = 1;
+	struct my_node *current_node;
+	    while(b)
+	    {
+		struct list_head *p;
+		list_for_each(p, &my_list)
+		{
+		    int a;
+		    get_random_bytes(&a, sizeof(a));
+		    if(a%2==0){
+		        current_node = list_entry(p, struct my_node, list);
+		        b = 0;
+			break;
+		    }
+		}
+
+	    }
+        list_del(&current_node->list);
+        kfree(current_node);	
+    }
+    getnstimeofday(&endtime);
+    end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
+}
+    
 
 int __init dLinkedListTest_init(void){
 
@@ -472,6 +532,11 @@ int __init dLinkedListTest_init(void){
     Node *iter = l.first->rlink->rlink;
     int count =0;
     int i = 0;
+
+    /*lockfree list test */
+
+    getnstimeofday(&starttime);
+    start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
     for(i =0; i<THREAD_COUNT;i++){
 	kthread_run((void*)threadTest1,NULL,"test_thread");
 
@@ -480,6 +545,7 @@ int __init dLinkedListTest_init(void){
     }
 
     ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
+    printk("Insert Time: %lld ns", end - start);
     printk("First for loop finish\n");
  
     iter=l.first->rlink->rlink;
@@ -493,6 +559,8 @@ int __init dLinkedListTest_init(void){
     count=count-2;
     printk("inserted: %d\n",count);
 
+    getnstimeofday(&starttime);
+    start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
     for(i =0; i<THREAD_COUNT;i++){
 	kthread_run((void*)threadTest2,NULL,"test_thread");
 	
@@ -501,6 +569,7 @@ int __init dLinkedListTest_init(void){
     }
 
     ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
+    printk("Delete  Time: %lld ns", end - start);
     printk("Second for loop finish\n");
  
  
@@ -517,7 +586,38 @@ int __init dLinkedListTest_init(void){
     printk("deleted: %d\n",count);
 
 
+    /* lock list test */
+    INIT_LIST_HEAD(&my_list);
+    
+    getnstimeofday(&starttime);
+    start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
+    for(i =0; i<THREAD_COUNT;i++){
+	kthread_run((void*)threadTest3,NULL,"test_thread");
 
+	printk("%d\n",i);
+    
+    }
+
+    ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
+    printk("Insert Time: %lld ns", end - start);
+    printk("First for loop finish\n");
+/* 
+
+    getnstimeofday(&starttime);
+    start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
+    for(i =0; i<THREAD_COUNT;i++){
+	kthread_run((void*)threadTest4,NULL,"test_thread");
+	
+	printk("%d\n",i);
+    
+    }
+
+    ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
+    printk("Delete  Time: %lld ns", end - start);
+    printk("Second for loop finish\n");
+
+
+*/
     return 0;
 }
 
