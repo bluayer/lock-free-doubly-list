@@ -483,7 +483,7 @@ void threadTest3(void)
 		}
 
 	}
-	list_add(&new->list, &my_list);
+	list_add(&new->list, &current_node->list);
     }
 	getnstimeofday(&endtime);
     	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
@@ -588,6 +588,12 @@ int __init dLinkedListTest_init(void){
 
     /* lock list test */
     INIT_LIST_HEAD(&my_list);
+
+    // Add first list to traverse to find node to delete or node for appending. 
+    struct my_node* initial_list = kmalloc(sizeof(struct my_node), GFP_KERNEL);
+    initial_list->data = 1;
+    list_add(&initial_list->list, &my_list);
+    
     
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
@@ -599,9 +605,9 @@ int __init dLinkedListTest_init(void){
     }
 
     ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
-    printk("Insert Time: %lld ns", end - start);
+    printk("List Insert Time: %lld ns", end - start);
     printk("First for loop finish\n");
-/* 
+ 
 
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
@@ -613,11 +619,11 @@ int __init dLinkedListTest_init(void){
     }
 
     ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
-    printk("Delete  Time: %lld ns", end - start);
+    printk("List Delete  Time: %lld ns", end - start);
     printk("Second for loop finish\n");
 
 
-*/
+
     return 0;
 }
 
