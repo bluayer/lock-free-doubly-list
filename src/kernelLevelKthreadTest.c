@@ -469,6 +469,7 @@ void threadTest3(void)
         new->data = i;
 	int b = 1;
 	struct my_node *current_node;
+	spin_lock(&spinlock);
 	while(b)
 	{
 		struct list_head *p;
@@ -485,6 +486,7 @@ void threadTest3(void)
 
 	}
 	list_add(&new->list, &current_node->list);
+	spin_unlock(&spinlock);	
     }
 	getnstimeofday(&endtime);
     	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
