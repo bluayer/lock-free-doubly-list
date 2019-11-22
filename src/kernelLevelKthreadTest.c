@@ -9,8 +9,9 @@
 #include <linux/timekeeping.h>
 #include <linux/random.h>
 #include <linux/list.h>
+#include <linux/spinlock.h>
 
-
+spinlock_t spinlock;
 struct timespec starttime;
 struct timespec endtime;
 unsigned long long start;
@@ -498,6 +499,7 @@ void threadTest4(void)
     int iterations=50;
     for(i=0;i<iterations;i++)
     {
+	spin_lock(&spinlock);
 	int b = 1;
 	struct my_node *current_node;
 	    while(b)
@@ -516,7 +518,8 @@ void threadTest4(void)
 
 	    }
         list_del(&current_node->list);
-        kfree(current_node);	
+        kfree(current_node);
+	spin_unlock(&spinlock);	
     }
     getnstimeofday(&endtime);
     end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
