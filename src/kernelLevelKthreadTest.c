@@ -29,31 +29,31 @@ typedef struct Node
     struct Node *llink;
 }Node;
 
-//Following is the structure for Insert operation
+//Structure for Insert operation
 struct Insert
 {
-	//Following is the structure for arguments passed to Insert
+	//Structure for arguments passed to Insert
 	struct Arguments
 	{
-		Node *p;//node to be inserted
+		Node *p;//Node to be inserted
 		Node *x;//p is inserted next to x
 	}args;
 	struct LocalVariables
 	{
 		Node *x_rlink_llink;//This announces the value of x->rlink->llink which needs to be set to p.
-		Node **x_rlink_llink_address;//This announces the address of x->rlink->llink which is used as destination in InterlockedCompareExchange.
+		Node **x_rlink_llink_address;//This announces the address of x->rlink->llink which is used as destination in __sync_val_compare_and_swap
 		Node *x_rlink;//This announces the value of x->rlink which needs to be set to p.
-		Node **x_rlink_address;//This announces the address of x->rlink which is used as destination in InterlockedCompareExchange.
+		Node **x_rlink_address;//This announces the address of x->rlink which is used as destination in __sync_val_compare_and_swap
 	}lv;
 };
 
-//Following is the structure for Delete operation
+//Structure for Delete operation
 struct Delete
 {
-	//Following is the structure for arguments passed to Delete
+	//Structure for arguments passed to Delete
 	struct _Arguments
 	{
-		Node *x;//node to be deleted.
+		Node *x;//Node to be deleted.
 	}args;
 	struct _LocalVariables
 	{
@@ -81,7 +81,6 @@ struct Delete
 };
 
 enum OperationName{NONE=0,INSERT=1,DELET=2};
-//Following structure contains the operations defined earlier.
 typedef struct AnnounceOp
 {
 	enum OperationName opName;
@@ -96,28 +95,23 @@ void InsertHelper(AnnounceOp *curAnnouncedOp);
 
 typedef struct LinkedList
 {
-	volatile AnnounceOp* announce;//current announcement
-	Node *first;//first node
-	Node *end;//end node
+	volatile AnnounceOp* announce;//Current announcement
+	Node *first;//First node
+	Node *end;//End node
 }LinkedList;
 
 LinkedList l;
 void initialize(void)
 {
-	//current announcement is that no operation is in progress
-	l.announce=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp),GFP_KERNEL);//new AnnounceOp;
-	//assert(l.announce);
+	//Current announcement is that no operation is in progress
+	l.announce=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp),GFP_KERNEL);
 	l.announce->opName=NONE;
 
-	//create 4 node doubly linked list
-	l.first=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);//new Node;
-	//assert(l.first);
+	//Create 4 node doubly linked list
+	l.first=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);
 	l.end=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);
-	//assert(l.end);
 	l.first->rlink=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);
-	//assert(l.first->rlink);
 	l.first->rlink->rlink=(Node *)kmalloc(sizeof(struct Node),GFP_KERNEL );
-	//assert(l.first->rlink->rlink);
 	l.first->llink=0;
 	l.first->rlink->llink=l.first;
 	l.first->rlink->rlink->rlink=l.end;
@@ -126,13 +120,12 @@ void initialize(void)
 	l.end->llink=l.first->rlink->rlink;
 }
 
-//insert node p to the right of node x
+//Insert node p to the right of node x
 int Insert(Node *p,Node *x)
 {
 	if(p==0||x==0) return 0;
 	AnnounceOp *curAnnouncedOp;
 	AnnounceOp *nextAnnounceOp=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp) ,GFP_KERNEL);//To announce an insert operation.
-	//assert(nextAnnounceOp);
 	while(1)
 	{
 		curAnnouncedOp=(AnnounceOp *)l.announce;
@@ -141,46 +134,38 @@ int Insert(Node *p,Node *x)
 		if(curAnnouncedOp->opName==NONE)
 		{
 
-				if(l.first==x||l.end==x||l.end->llink==x)//insertion should not be after first or after end or after one node before end
+				if(l.first==x||l.end==x||l.end->llink==x)//Insertion should not be after first or after end or after one node before end
 				{
 					kfree(nextAnnounceOp);
 					return 0;
 				}
-				p->llink=x;//set p's left as x
-				p->rlink=x->rlink;//set p's right as x's right
+				p->llink=x;//Set p's left as x
+				p->rlink=x->rlink;//Set p's right as x's right
 				if(p->rlink==0||p->llink==0)  goto label;
-				nextAnnounceOp->opName=INSERT;//set INSERT as the next operation
+				nextAnnounceOp->opName=INSERT;//Set INSERT as the next operation
 				nextAnnounceOp->insert.args.p=p;
 				nextAnnounceOp->insert.args.x=x;
 
-				//announce the value of x->rlink which needs to be set to p
+				//Announce the value of x->rlink which needs to be set to p
 				nextAnnounceOp->insert.lv.x_rlink=x->rlink;
-				if(nextAnnounceOp->insert.lv.x_rlink==0)  goto label;//node x is no more in the linked list
-				Node *hp2=nextAnnounceOp->insert.lv.x_rlink;//set hazard pointer
-				if(x->rlink!=nextAnnounceOp->insert.lv.x_rlink)  goto label;//check that hazard pointer has been set accurately
-				nextAnnounceOp->insert.lv.x_rlink_address=&x->rlink;//announce the address of x->rlink to be used as destination in InterlockedCompareExchange
+				if(nextAnnounceOp->insert.lv.x_rlink==0)  goto label;//Node x is no more in the linked list
+				Node *hp2=nextAnnounceOp->insert.lv.x_rlink;//Set hazard pointer
+				if(x->rlink!=nextAnnounceOp->insert.lv.x_rlink)  goto label;//Check that hazard pointer has been set accurately
+				nextAnnounceOp->insert.lv.x_rlink_address=&x->rlink;//Announce the address of x->rlink to be used as destination in __sync_val_compare_and_swap
 
-				//announce the value of x->rlink->llink which needs to be set to p
+				//Announce the value of x->rlink->llink which needs to be set to p
 				nextAnnounceOp->insert.lv.x_rlink_llink=nextAnnounceOp->insert.lv.x_rlink->llink;
-				if(nextAnnounceOp->insert.lv.x_rlink_llink==0)  goto label;//node next to node x is unlinked
-				Node *hp1=nextAnnounceOp->insert.lv.x_rlink_llink;//set hazard pointer
-				if(nextAnnounceOp->insert.lv.x_rlink->llink!=nextAnnounceOp->insert.lv.x_rlink_llink)  goto label;//check hazard pointer is set correctly
-				nextAnnounceOp->insert.lv.x_rlink_llink_address=&nextAnnounceOp->insert.lv.x_rlink->llink;//announce the address of x->rlink->llink to be used as destination in InterlockedCompareExchange.
-
-
-
-				//Check that announced addresses has not changed
-				/*if(&x->rlink->llink!=nextAnnounceOp->insert.lv.x_rlink_llink_address)  goto label;
-				if(&x->rlink!=nextAnnounceOp->insert.lv.x_rlink_address)  goto label;*/
+				if(nextAnnounceOp->insert.lv.x_rlink_llink==0)  goto label;//Node next to node x is unlinked
+				Node *hp1=nextAnnounceOp->insert.lv.x_rlink_llink;//Set hazard pointer
+				if(nextAnnounceOp->insert.lv.x_rlink->llink!=nextAnnounceOp->insert.lv.x_rlink_llink)  goto label;//Check hazard pointer is set correctly
+				nextAnnounceOp->insert.lv.x_rlink_llink_address=&nextAnnounceOp->insert.lv.x_rlink->llink;//Announce the address of x->rlink->llink to be used as destination in __sync_val_compare_and_swap
 
 				//To announce the start of insert operation.
 				void *v1=(void*)(nextAnnounceOp);
 				void *v2=(void*)(curAnnouncedOp);
 				void *res = (void*)__sync_val_compare_and_swap((volatile long*)&l.announce, (long) v2 ,(long) v1 );
-				//void *res=(void *)__atomic_compare_exchange((volatile long)(&l.announce),(long)v1,(long)v2);
 				if(res==v2)
 				{
-					//RetireNode(curAnnouncedOp);
 					InsertHelper(nextAnnounceOp);
 					return 1;
 				}
@@ -188,7 +173,6 @@ int Insert(Node *p,Node *x)
 		}
 		else if(curAnnouncedOp->opName==INSERT)
 		{
-		    printk("INSERTHELPER\n");
 		    InsertHelper(curAnnouncedOp);
 		}
 		else if(curAnnouncedOp->opName==DELET)
@@ -205,12 +189,9 @@ int Delete(Node *x)
 {
 	if(x==0) return 0;
 	AnnounceOp *curAnnouncedOp;
-	AnnounceOp *nextAnnounceOp=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp) ,GFP_KERNEL);//new AnnounceOp;//To announce a delete operation.
-	//assert(nextAnnounceOp);
-	Node *replacement_x_llink=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);//new Node;
-	//assert(replacement_x_llink);
-	Node *replacement_x_rlink=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);//new Node;
-	//assert(replacement_x_rlink);
+	AnnounceOp *nextAnnounceOp=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp) ,GFP_KERNEL);//To announce a delete operation.
+	Node *replacement_x_llink=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);
+	Node *replacement_x_rlink=(Node *)kmalloc(sizeof(struct Node) ,GFP_KERNEL);
 	while(1)
 	{
 		curAnnouncedOp=(AnnounceOp *)l.announce;
@@ -218,24 +199,24 @@ int Delete(Node *x)
 		if(curAnnouncedOp!=l.announce) continue;
 		if(curAnnouncedOp->opName==NONE)
 		{
-				if(l.first==x||l.end==x||l.first->rlink==x||l.end->llink==x) //check x is not one of the four dummy nodes
+				if(l.first==x||l.end==x||l.first->rlink==x||l.end->llink==x) //Check x is not one of the four dummy nodes
 				{
 					kfree(nextAnnounceOp);
 					kfree(replacement_x_llink);
 					kfree(replacement_x_rlink);
 					return 0;
 				}
-				//set Delete as the next operation
+				//Set Delete as the next operation
 				nextAnnounceOp->opName=DELET;
 				nextAnnounceOp->del.args.x=x;
 
-				nextAnnounceOp->del.lv.x_llink=x->llink;//announce the value of x->llink to be used in CAS
-				Node *hp1=nextAnnounceOp->del.lv.x_llink;//set hazard pointer
-				if(nextAnnounceOp->del.lv.x_llink!=x->llink||nextAnnounceOp->del.lv.x_llink==0) goto label1;//check hazard pointer is set accurately and x->llink is not zero
-				nextAnnounceOp->del.lv.x_llink_address=&x->llink;//announce the address of x->llink to be used in CAS
+				nextAnnounceOp->del.lv.x_llink=x->llink;//Announce the value of x->llink to be used in CAS
+				Node *hp1=nextAnnounceOp->del.lv.x_llink;//Set hazard pointer
+				if(nextAnnounceOp->del.lv.x_llink!=x->llink||nextAnnounceOp->del.lv.x_llink==0) goto label1;//Check hazard pointer is set accurately and x->llink is not zero
+				nextAnnounceOp->del.lv.x_llink_address=&x->llink;//Announce the address of x->llink to be used in CAS
 
 				//Following statements are on the same pattern as above i.e. announce the value of variable
-				//set hazard pointer. check hazard pointer is set accurately. Announce the address of that variable
+				//Set hazard pointer. check hazard pointer is set accurately. Announce the address of that variable
 
 				nextAnnounceOp->del.lv.x_rlink=x->rlink;
 				Node *hp2=nextAnnounceOp->del.lv.x_rlink;
@@ -272,30 +253,15 @@ int Delete(Node *x)
 				if(nextAnnounceOp->del.lv.x_rlink_rlink_llink!=nextAnnounceOp->del.lv.x_rlink_rlink->llink||nextAnnounceOp->del.lv.x_rlink_rlink_llink==0)  goto label1;
 				nextAnnounceOp->del.lv.x_rlink_rlink_llink_address=&nextAnnounceOp->del.lv.x_rlink_rlink->llink;
 
-				nextAnnounceOp->del.lv.replacement_x_llink=replacement_x_llink;//announce the replacement for the node left to x
-				nextAnnounceOp->del.lv.replacement_x_rlink=replacement_x_rlink;//announce the replacement for the node right to x
-				replacement_x_llink->data=nextAnnounceOp->del.lv.x_llink->data;//copy data
-				replacement_x_rlink->data=nextAnnounceOp->del.lv.x_rlink->data;//copy data
-				//build the chain
-	//x_llink_llink//replacement_x_llink//replacement_x_rlink//x_rlink_rlink
-	//	---------	-------             --------               -------
-	//	|		|	|	   |-----------|        |              |      |
-	//	|		|===|      |===========|        |==============|      |
-	//	 -------	-------             --------                -------
+				nextAnnounceOp->del.lv.replacement_x_llink=replacement_x_llink;//Announce the replacement for the node left to x
+				nextAnnounceOp->del.lv.replacement_x_rlink=replacement_x_rlink;//Announce the replacement for the node right to x
+				replacement_x_llink->data=nextAnnounceOp->del.lv.x_llink->data;//Copy data
+				replacement_x_rlink->data=nextAnnounceOp->del.lv.x_rlink->data;//Copy data
+
 				replacement_x_llink->rlink=replacement_x_rlink;
 				replacement_x_llink->llink=nextAnnounceOp->del.lv.x_llink_llink;
 				replacement_x_rlink->llink=replacement_x_llink;
-				replacement_x_rlink->rlink=nextAnnounceOp->del.lv.x_rlink_rlink;//x->rlink->rlink;
-
-				//check addresses has not changed
-				/*if(nextAnnounceOp->del.lv.x_llink_address!=&x->llink) goto label1;
-				if(nextAnnounceOp->del.lv.x_rlink_address!=&x->rlink)  goto label1;
-				if(nextAnnounceOp->del.lv.x_llink_rlink_address!=&x->llink->rlink)  goto label1;
-				if(nextAnnounceOp->del.lv.x_rlink_llink_address!=&x->rlink->llink)  goto label1;
-				if(nextAnnounceOp->del.lv.x_rlink_rlink_address!=&x->rlink->rlink)  goto label1;
-				if(nextAnnounceOp->del.lv.x_llink_llink_address!=&x->llink->llink)  goto label1;
-				if(nextAnnounceOp->del.lv.x_llink_llink_rlink_address!=&x->llink->llink->rlink)  goto label1;
-				if(nextAnnounceOp->del.lv.x_rlink_rlink_llink_address!=&x->rlink->rlink->llink)  goto label1;*/
+				replacement_x_rlink->rlink=nextAnnounceOp->del.lv.x_rlink_rlink;
 
 				//To announce the start of delete operation.
 				void *v1=(void*)(nextAnnounceOp);
@@ -303,7 +269,6 @@ int Delete(Node *x)
 				void *res = (void*)__sync_val_compare_and_swap((long*)&l.announce, (long) v2 ,(long) v1 );
 				if(res==v2)
 				{
-					//RetireNode(curAnnouncedOp);
 					DeleteHelper(nextAnnounceOp);
 					return 1;
 				}
@@ -327,19 +292,18 @@ label1:
 //Second part of insert
 void InsertHelper(AnnounceOp *curAnnouncedOp)
 {
-//set x's right link to node p (newly created node)
+//Set x's right link to node p (newly created node)
 __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->insert.lv.x_rlink_address),(long)curAnnouncedOp->insert.lv.x_rlink,(long)curAnnouncedOp->insert.args.p);
-//set the left pointer of node next to x to point to p
+//Set the left pointer of node next to x to point to p
 __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->insert.lv.x_rlink_llink_address),(long)curAnnouncedOp->insert.lv.x_rlink_llink,(long)curAnnouncedOp->insert.args.p);	
     //To announce that insert operation is complete.
 	AnnounceOp *nextAnnounceOp=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp),GFP_KERNEL );
-	//assert(nextAnnounceOp);
 	nextAnnounceOp->opName=NONE;
 	void *v1=(void*)(nextAnnounceOp);
 	void *v2=(void*)(curAnnouncedOp);
 	if(__sync_val_compare_and_swap((volatile long *)(&l.announce),(long)v2,(long)v1)==(long)v2)
 	{
-		//RetireNode(v2);
+
 	}
 	else
 	{
@@ -350,7 +314,7 @@ __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->insert.lv.x_rlink_
 //Second part of delete
 void DeleteHelper(AnnounceOp *curAnnouncedOp)
 {
-	//replace 2 nodes around x including x with two new nodes
+	//Replace 2 nodes around x including x with two new nodes
 	__sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_llink_llink_rlink_address),(long)curAnnouncedOp->del.lv.x_llink_llink_rlink,(long)curAnnouncedOp->del.lv.replacement_x_llink);
 __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_rlink_rlink_llink_address),(long)curAnnouncedOp->del.lv.x_rlink_rlink_llink,(long)curAnnouncedOp->del.lv.replacement_x_rlink);
 	//Set 3 retired nodes pointer fields to 0
@@ -361,19 +325,16 @@ __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_rlink_lli
 __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_llink_address),(long)curAnnouncedOp->del.lv.x_llink,(long)0);
 	if(__sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_rlink_address),(long)curAnnouncedOp->del.lv.x_rlink,(long)0)==(long)curAnnouncedOp->del.lv.x_rlink)
 	{
-		//RetireNode(x);
-		//RetireNode(curAnnouncedOp->del.lv.x_llink);
-		//RetireNode(curAnnouncedOp->del.lv.x_rlink);
+
 	}
 	//To announce that delete operation is complete.
 	AnnounceOp *nextAnnounceOp=(AnnounceOp*)kmalloc(sizeof(struct AnnounceOp) ,GFP_KERNEL);
-	//assert(nextAnnounceOp);
 	nextAnnounceOp->opName=NONE;
 	void *v1=(void *)(nextAnnounceOp);
 	void *v2=(void *)(curAnnouncedOp);
 	if(__sync_val_compare_and_swap((volatile long *)(&l.announce),(long)v2,(long)v1)==(long)v2)
 	{
-		//RetireNode(curAnnouncedOp);
+
 	}
 	else
 	{
@@ -389,8 +350,7 @@ void threadTest1(void){
     int iterations =50;
     for(i=0;i<iterations;i++)
     {
-	Node *p=(Node *)kmalloc(sizeof(struct Node),GFP_KERNEL);//new Node;
-	//assert(p);
+	Node *p=(Node *)kmalloc(sizeof(struct Node),GFP_KERNEL);
 	p->data=i;
 	do
 	{
@@ -418,7 +378,6 @@ void threadTest1(void){
     }
     getnstimeofday(&endtime);
     end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
-    printk("TestFinished\n");
 }
 
 
@@ -545,13 +504,13 @@ int __init dLinkedListTest_init(void){
     for(i =0; i<THREAD_COUNT;i++){
 	kthread_run((void*)threadTest1,NULL,"test_thread");
 
-	printk("%d\n",i);
+	//printk("%d\n",i);
     
     }
 
-    ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
-    printk("Insert Time: %lld ns", end - start);
-    printk("First for loop finish\n");
+    ssleep(2);
+    printk("Lock-Free Linked List Insert Time: %lld ns", end - start);
+    //printk("First for loop finish\n");
  
     iter=l.first->rlink->rlink;
     count =0;
@@ -562,20 +521,20 @@ int __init dLinkedListTest_init(void){
 	count++;
     }
     count=count-2;
-    printk("inserted: %d\n",count);
+    //printk("inserted: %d\n",count);
 
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
     for(i =0; i<THREAD_COUNT;i++){
 	kthread_run((void*)threadTest2,NULL,"test_thread");
 	
-	printk("%d\n",i);
+	//printk("%d\n",i);
     
     }
 
-    ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
-    printk("Delete  Time: %lld ns", end - start);
-    printk("Second for loop finish\n");
+    ssleep(2);
+    printk("Lock-Free Linked List Delete Time: %lld ns", end - start);
+    //printk("Second for loop finish\n");
  
  
     iter=l.first->rlink->rlink;
@@ -588,10 +547,11 @@ int __init dLinkedListTest_init(void){
     }
     
     count=count-2;
-    printk("deleted: %d\n",count);
+    //printk("deleted: %d\n",count);
 
 
     /* lock list test */
+
     INIT_LIST_HEAD(&my_list);
 
     // Add first list to traverse to find node to delete or node for appending. 
@@ -605,13 +565,13 @@ int __init dLinkedListTest_init(void){
     for(i =0; i<THREAD_COUNT;i++){
 	kthread_run((void*)threadTest3,NULL,"test_thread");
 
-	printk("%d\n",i);
+	//printk("%d\n",i);
     
     }
 
-    ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
-    printk("List Insert Time: %lld ns", end - start);
-    printk("First for loop finish\n");
+    ssleep(2);
+    printk("Lock Linked List Insert Time: %lld ns", end - start);
+    //printk("First for loop finish\n");
  
 
     getnstimeofday(&starttime);
@@ -619,14 +579,13 @@ int __init dLinkedListTest_init(void){
     for(i =0; i<THREAD_COUNT;i++){
 	kthread_run((void*)threadTest4,NULL,"test_thread");
 	
-	printk("%d\n",i);
+	//printk("%d\n",i);
     
     }
 
-    ssleep(2);// 스레드 싱크 맞추기 (여기에 세마포어 걸어두시면 될것같아여
-    printk("List Delete  Time: %lld ns", end - start);
-    printk("Second for loop finish\n");
-
+    ssleep(2);
+    printk("Lock Linked List Delete Time: %lld ns", end - start);
+    //printk("Second for loop finish\n");
 
 
     return 0;
