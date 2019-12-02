@@ -344,21 +344,77 @@ __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_llink_add
 	}
 }
 #define NUMOP 15000
-void threadTest0(void){
-     Node *first=l.first;
+void threadTest0_0(void){
+   Node *first=l.first;
     Node *x=first->rlink;
-    	while(numOfOperation > NUMOP)
+    int i;
+    int insertCount=0;
+    int iterations =50;
+    for(i=0;NUMOP < numOfOperation;i++, numOfOperation++)
+    {
+	Node *p=(Node *)kmalloc(sizeof(struct Node),GFP_KERNEL);
+	p->data=i;
+	do
+	{
+	    insertCount++;
+	    x=first->rlink;
+	    while(1)
 	    {
 		int a;
 		get_random_bytes(&a, sizeof(a));
+		if(insertCount++ >50)
+		    break;
+		else
+		{
 		    if(x->rlink==l.end)
 			x=first->rlink;
 		    else if(x->rlink!=0)
 			x=x->rlink;
 		    else
 			x=first->rlink;
+		}
 
 	    }
+	    insertCount = 0;
+
+	}while(!Insert(p,x));
+    }
+    getnstimeofday(&endtime);
+    end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
+}
+
+void threadTest0_1(void){
+    Node *first=l.first;
+    Node *x=first->rlink;
+    int i;
+    int insertCount=0;
+    int iterations=50;
+    for(i=0;NUMOP < numOfOperation;i++, numOfOperation++)
+    {
+	do
+	{
+	    x=l.first->rlink->rlink;
+	    while(1)
+	    {
+		if(insertCount++ > 50)
+		    break;
+		else
+		{
+		    if(x->rlink==l.end||x->rlink==l.end->llink)
+			x=l.first->rlink->rlink;
+		    else if(x->rlink!=0)
+			x=x->rlink;
+		    else
+			x=l.first->rlink->rlink;
+		}
+
+	    }
+	insertCount = 0;
+	}
+	while(!Delete(x));
+    }
+	getnstimeofday(&endtime);
+    	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
 }
 void threadTest1(void){
     Node *first=l.first;
@@ -432,6 +488,70 @@ void threadTest2(void){
     }
 	getnstimeofday(&endtime);
     	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
+}
+void threadTest1_0(void){
+    
+    int i;
+    int insertCount=0;
+    int iterations=50;
+    for(i=0;NUMOP < numOfOperation2;i++, numOfOperation2++)
+    {
+	struct my_node* new = kmalloc(sizeof(struct my_node), GFP_KERNEL);
+        new->data = i;
+	int b = 1;
+	struct my_node *current_node;
+	spin_lock(&spinlock);
+	while(b)
+	{
+		struct list_head *p;
+		list_for_each(p, &my_list)
+		{
+		    if(insertCount++ > 50){
+		        current_node = list_entry(p, struct my_node, list);
+		        b = 0;
+			break;
+		    }
+		}
+
+	}
+	insertCount = 0;
+	list_add(&new->list, &current_node->list);
+	spin_unlock(&spinlock);	
+    }
+	getnstimeofday(&endtime);
+    	end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
+}
+void threadTest1_1(void){
+    Node *first=l.first;
+    Node *x=first->rlink;
+    int i;
+    int insertCount=0;
+    int iterations=50;
+    for(i=0;NUMOP < numOfOperation2;i++, numOfOperation2++)
+    {
+	spin_lock(&spinlock);
+	int b = 1;
+	struct my_node *current_node;
+	    while(b)
+	    {
+		struct list_head *p;
+		list_for_each(p, &my_list)
+		{
+		    if(insertCount++ > 50){
+		        current_node = list_entry(p, struct my_node, list);
+		        b = 0;
+			break;
+		    }
+		}
+
+	    }
+	insertCount = 0;
+        list_del(&current_node->list);
+        kfree(current_node);
+	spin_unlock(&spinlock);	
+    }
+    getnstimeofday(&endtime);
+    end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
 }
 
 void threadTest3(void)
@@ -561,13 +681,12 @@ int __init dLinkedListTest_init(void){
     numOfOperation = 0;
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
-    for(i =0; i<100;i++){
-	if(i == 50){
-		kthread_run((void*)threadTest1, NULL, "test_thread");
-		kthread_run((void*)threadTest2, NULL, "test_thread");
+    for(i =0; i<16;i++){
+	if(i == 8){
+		kthread_run((void*)threadTest0_0, NULL, "test_thread");
 	}
 	else
-		kthread_run((void*)threadTest0,NULL,"test_thread");
+		kthread_run((void*)threadTest0_1,NULL,"test_thread");
 	
 	//printk("%d\n",i);
     
@@ -603,13 +722,12 @@ int __init dLinkedListTest_init(void){
     numOfOperation2 = 0;
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
-    for(i =0; i<100;i++){
-	if(i == 50){
-		kthread_run((void*)threadTest3, NULL, "test_thread");
-		kthread_run((void*)threadTest4, NULL, "test_thread");
+    for(i =0; i<16;i++){
+	if(i == 8){
+		kthread_run((void*)threadTest1_0, NULL, "test_thread");
 	}
 	else
-		kthread_run((void*)threadTest5,NULL,"test_thread");
+		kthread_run((void*)threadTest1_1,NULL,"test_thread");
 	
     }
 
