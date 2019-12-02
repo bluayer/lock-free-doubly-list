@@ -29,6 +29,8 @@ typedef struct Node
     struct Node *llink;
 }Node;
 
+int numOfOperation;
+int numOfOperation2;
 //Structure for Insert operation
 struct Insert
 {
@@ -341,14 +343,30 @@ __sync_val_compare_and_swap((volatile long *)(curAnnouncedOp->del.lv.x_llink_add
 		kfree(nextAnnounceOp);
 	}
 }
+#define NUMOP 15000
+void threadTest0(void){
+     Node *first=l.first;
+    Node *x=first->rlink;
+    	while(numOfOperation > NUMOP)
+	    {
+		int a;
+		get_random_bytes(&a, sizeof(a));
+		    if(x->rlink==l.end)
+			x=first->rlink;
+		    else if(x->rlink!=0)
+			x=x->rlink;
+		    else
+			x=first->rlink;
 
+	    }
+}
 void threadTest1(void){
     Node *first=l.first;
     Node *x=first->rlink;
     int i;
     int insertCount=0;
     int iterations =50;
-    for(i=0;i<iterations;i++)
+    for(i=0;NUMOP < numOfOperation;i++, numOfOperation++)
     {
 	Node *p=(Node *)kmalloc(sizeof(struct Node),GFP_KERNEL);
 	p->data=i;
@@ -387,7 +405,7 @@ void threadTest2(void){
     int i;
     int insertCount=0;
     int iterations=50;
-    for(i=0;i<iterations;i++)
+    for(i=0;NUMOP < numOfOperation;i++, numOfOperation++)
     {
 	do
 	{
@@ -422,7 +440,7 @@ void threadTest3(void)
     int i;
     int insertCount=0;
     int iterations=50;
-    for(i=0;i<iterations;i++)
+    for(i=0;NUMOP < numOfOperation2;i++, numOfOperation2++)
     {
 	struct my_node* new = kmalloc(sizeof(struct my_node), GFP_KERNEL);
         new->data = i;
@@ -458,7 +476,7 @@ void threadTest4(void)
     int i;
     int insertCount=0;
     int iterations=50;
-    for(i=0;i<iterations;i++)
+    for(i=0;NUMOP < numOfOperation2;i++, numOfOperation2++)
     {
 	spin_lock(&spinlock);
 	int b = 1;
@@ -485,7 +503,34 @@ void threadTest4(void)
     getnstimeofday(&endtime);
     end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
 }
-    
+
+void threadTest5(void){
+    int i;
+    for(i=0;NUMOP<numOfOperation2;i++)
+    {
+	spin_lock(&spinlock);
+	int b = 1;
+	struct my_node *current_node;
+	    while(b)
+	    {
+		struct list_head *p;
+		list_for_each(p, &my_list)
+		{
+		    int a;
+		    get_random_bytes(&a, sizeof(a));
+		    if(a%2==0){
+		        current_node = list_entry(p, struct my_node, list);
+		        b = 0;
+			break;
+		    }
+		}
+
+	    }
+	spin_unlock(&spinlock);	
+    }
+    getnstimeofday(&endtime);
+    end = (unsigned long)endtime.tv_sec*1000000000 + (unsigned long)endtime.tv_nsec;
+}
 
 int __init dLinkedListTest_init(void){
 
@@ -507,51 +552,33 @@ int __init dLinkedListTest_init(void){
 	//printk("%d\n",i);
     
     }
+    
 
-    ssleep(2);
+    ssleep(5);
     printk("Lock-Free Linked List Insert Time: %lld ns", end - start);
     //printk("First for loop finish\n");
  
-    iter=l.first->rlink->rlink;
-    count =0;
-
-    while(iter)
-    {
-	iter=iter->rlink;
-	count++;
-    }
-    count=count-2;
-    //printk("inserted: %d\n",count);
-
+    numOfOperation = 0;
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
-    for(i =0; i<THREAD_COUNT;i++){
-	kthread_run((void*)threadTest2,NULL,"test_thread");
+    for(i =0; i<100;i++){
+	if(i == 50){
+		kthread_run((void*)threadTest1, NULL, "test_thread");
+		kthread_run((void*)threadTest2, NULL, "test_thread");
+	}
+	else
+		kthread_run((void*)threadTest0,NULL,"test_thread");
 	
 	//printk("%d\n",i);
     
     }
 
-    ssleep(2);
-    printk("Lock-Free Linked List Delete Time: %lld ns", end - start);
+    ssleep(5);
+    printk("Lock-Free Linked List concurrent Time: %lld ns", end - start);
     //printk("Second for loop finish\n");
  
- 
-    iter=l.first->rlink->rlink;
-    count =0;
-
-    while(iter)
-    {
-	iter=iter->rlink;
-	count++;
-    }
-    
-    count=count-2;
-    //printk("deleted: %d\n",count);
-
 
     /* lock list test */
-
     INIT_LIST_HEAD(&my_list);
 
     // Add first list to traverse to find node to delete or node for appending. 
@@ -569,25 +596,26 @@ int __init dLinkedListTest_init(void){
     
     }
 
-    ssleep(2);
+    ssleep(5);
     printk("Lock Linked List Insert Time: %lld ns", end - start);
     //printk("First for loop finish\n");
  
-
+    numOfOperation2 = 0;
     getnstimeofday(&starttime);
     start = (unsigned long)starttime.tv_sec*1000000000 + (unsigned long)starttime.tv_nsec;
-    for(i =0; i<THREAD_COUNT;i++){
-	kthread_run((void*)threadTest4,NULL,"test_thread");
+    for(i =0; i<100;i++){
+	if(i == 50){
+		kthread_run((void*)threadTest3, NULL, "test_thread");
+		kthread_run((void*)threadTest4, NULL, "test_thread");
+	}
+	else
+		kthread_run((void*)threadTest5,NULL,"test_thread");
 	
-	//printk("%d\n",i);
-    
     }
 
-    ssleep(2);
-    printk("Lock Linked List Delete Time: %lld ns", end - start);
+    ssleep(5);
+    printk("Lock Linked List concurrent Time: %lld ns", end - start);
     //printk("Second for loop finish\n");
-
-
     return 0;
 }
 
